@@ -1,5 +1,6 @@
 import { MemoryStore } from './store.js';
 import { HubClient } from './hub.js';
+import { checkInbox, consumeInbox } from './pipe.js';
 
 const store = new MemoryStore(process.cwd());
 const hub = new HubClient();
@@ -65,6 +66,16 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'kodo_inbox',
+    description: 'Check the inbox for long text piped from other terminals via `kodo pipe`. Use this when the user says they piped something or you want to check for pending input. Returns the full content that was too long to paste into the terminal directly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        consume: { type: 'boolean', description: 'Remove messages after reading (default true)', default: true },
+      },
+    },
+  },
 ];
 
 function handleToolCall(name, args) {
@@ -107,6 +118,18 @@ function handleToolCall(name, args) {
         return `[${time}] [${e.memoryType || e.type}] ${(e.content || '').slice(0, 120)} (from session ${e.from?.slice(0, 8)})`;
       }).join('\n');
       return { content: [{ type: 'text', text: `Live feed from other terminals:\n\n${text}` }] };
+    }
+    case 'kodo_inbox': {
+      const items = checkInbox();
+      if (!items.length) return { content: [{ type: 'text', text: 'Inbox empty. Nothing piped.' }] };
+      const parts = items.map(item => {
+        const ago = Math.round((Date.now() - item.ts) / 1000);
+        const time = ago < 60 ? `${ago}s ago` : `${Math.round(ago / 60)}m ago`;
+        const header = item.prompt ? `**Prompt (${time}):** ${item.prompt}\n\n` : `**Piped ${time}:**\n\n`;
+        return header + item.content;
+      });
+      if (args.consume !== false) items.forEach(i => consumeInbox(i.file));
+      return { content: [{ type: 'text', text: parts.join('\n\n---\n\n') }] };
     }
     default:
       throw { code: -32601, message: `Unknown tool: ${name}` };

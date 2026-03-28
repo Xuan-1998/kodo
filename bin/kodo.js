@@ -8,6 +8,7 @@ import { learnFromGit } from '../src/git-learn.js';
 import { importMemories } from '../src/import.js';
 import { watchSessions } from '../src/watch.js';
 import { startHub } from '../src/hub.js';
+import { pipe } from '../src/pipe.js';
 
 const program = new Command();
 const cwd = process.cwd();
@@ -150,6 +151,22 @@ program
     }
     console.log(chalk.dim('\n  Press Ctrl+C to stop.\n'));
     process.on('SIGINT', () => { result.stop(); console.log(chalk.dim('\nStopped.')); process.exit(0); });
+  });
+
+program
+  .command('pipe [prompt]')
+  .description('Pipe long text to kiro/agent inbox. Reads from stdin. Usage: pbpaste | kodo pipe "analyze this"')
+  .action((prompt) => {
+    let data = '';
+    process.stdin.setEncoding('utf-8');
+    process.stdin.on('data', (chunk) => { data += chunk; });
+    process.stdin.on('end', () => {
+      if (!data.trim()) { console.error(chalk.red('Nothing on stdin. Usage: pbpaste | kodo pipe "prompt"')); process.exit(1); }
+      const id = pipe(prompt || '', data);
+      const kb = (Buffer.byteLength(data) / 1024).toFixed(1);
+      console.log(chalk.green(`✓ Piped ${kb}KB to inbox`) + chalk.dim(` (${id})`));
+      console.log(chalk.dim('  Agent will see it via kodo_inbox tool'));
+    });
   });
 
 program
