@@ -1,7 +1,18 @@
 import { MemoryStore } from './store.js';
+import { HubClient } from './hub.js';
 
-// Minimal MCP server over stdio (JSON-RPC 2.0)
 const store = new MemoryStore(process.cwd());
+const hub = new HubClient();
+hub.connect();
+
+// Ring buffer of recent events from other terminals
+const liveEvents = [];
+const MAX_LIVE = 50;
+
+hub.onEvent((evt) => {
+  liveEvents.push(evt);
+  if (liveEvents.length > MAX_LIVE) liveEvents.shift();
+});
 
 const TOOLS = [
   {
@@ -43,6 +54,17 @@ const TOOLS = [
     description: 'Get memory statistics — total count, breakdown by type and project.',
     inputSchema: { type: 'object', properties: {} },
   },
+  {
+    name: 'kodo_live',
+    description: 'See what other terminals/sessions are doing right now. Shows recent memories and activities from other kodo-connected sessions. Use this to get context from parallel work happening in other terminals.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max events to show', default: 20 },
+        query: { type: 'string', description: 'Filter events by keyword' },
+      },
+    },
+  },
 ];
 
 function handleToolCall(name, args) {
@@ -55,6 +77,8 @@ function handleToolCall(name, args) {
         source: 'agent',
         project: process.cwd().split('/').pop(),
       });
+      // Broadcast to other terminals
+      hub.publish({ type: 'memory', memoryType: args.type, content: args.content, id, tags: args.tags || [] });
       return { content: [{ type: 'text', text: `Remembered (id=${id}): [${args.type}] ${args.content.slice(0, 80)}...` }] };
     }
     case 'kodo_recall': {
@@ -70,6 +94,19 @@ function handleToolCall(name, args) {
     case 'kodo_stats': {
       const s = store.stats();
       return { content: [{ type: 'text', text: JSON.stringify(s, null, 2) }] };
+    }
+    case 'kodo_live': {
+      const limit = args.limit || 20;
+      const q = args.query?.toLowerCase();
+      let events = q ? liveEvents.filter(e => (e.content || '').toLowerCase().includes(q)) : liveEvents;
+      events = events.slice(-limit);
+      if (!events.length) return { content: [{ type: 'text', text: 'No live events from other terminals yet. Make sure `kodo hub` is running.' }] };
+      const text = events.map(e => {
+        const ago = Math.round((Date.now() - e.ts) / 1000);
+        const time = ago < 60 ? `${ago}s ago` : `${Math.round(ago / 60)}m ago`;
+        return `[${time}] [${e.memoryType || e.type}] ${(e.content || '').slice(0, 120)} (from session ${e.from?.slice(0, 8)})`;
+      }).join('\n');
+      return { content: [{ type: 'text', text: `Live feed from other terminals:\n\n${text}` }] };
     }
     default:
       throw { code: -32601, message: `Unknown tool: ${name}` };
@@ -105,11 +142,11 @@ function handleMessage(msg) {
         result: {
           protocolVersion: '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: 'kodo', version: '0.1.0' },
+          serverInfo: { name: 'kodo', version: '0.2.0' },
         },
       };
     case 'notifications/initialized':
-      return null; // no response needed
+      return null;
     case 'tools/list':
       return { jsonrpc: '2.0', id, result: { tools: TOOLS } };
     case 'tools/call':
@@ -128,5 +165,5 @@ function send(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
 }
 
-process.on('SIGINT', () => { store.close(); process.exit(0); });
-process.on('SIGTERM', () => { store.close(); process.exit(0); });
+process.on('SIGINT', () => { hub.close(); store.close(); process.exit(0); });
+process.on('SIGTERM', () => { hub.close(); store.close(); process.exit(0); });

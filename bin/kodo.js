@@ -5,6 +5,9 @@ import chalk from 'chalk';
 import { MemoryStore } from '../src/store.js';
 import { exportMemories } from '../src/export.js';
 import { learnFromGit } from '../src/git-learn.js';
+import { importMemories } from '../src/import.js';
+import { watchSessions } from '../src/watch.js';
+import { startHub } from '../src/hub.js';
 
 const program = new Command();
 const cwd = process.cwd();
@@ -111,6 +114,54 @@ program
     console.log(chalk.dim('  kodo learn          # auto-learn from git'));
     console.log(chalk.dim('  kodo export         # export to agent configs'));
     console.log(chalk.dim('  kodo search "style" # search memories'));
+  });
+
+program
+  .command('import')
+  .description('Import memories from claude-mem, mem0, or JSONL session logs')
+  .requiredOption('-s, --source <source>', 'Source: claude-mem | mem0 | jsonl')
+  .requiredOption('-p, --path <path>', 'Path to source data (directory, db file, or jsonl file)')
+  .action((opts) => {
+    try {
+      const { added, source } = importMemories(cwd, opts.source, opts.path);
+      console.log(chalk.green(`✓ Imported ${added} memories from ${source}`));
+    } catch (e) {
+      console.error(chalk.red(`✗ ${e.message}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('watch')
+  .description('Watch agent sessions and auto-learn memories in real-time')
+  .action(() => {
+    console.log(chalk.cyan('👁  Watching agent sessions for memories...'));
+    const result = watchSessions(cwd, {
+      onMemory: ({ id, type, content, agent }) => {
+        console.log(chalk.green(`✓ #${id}`) + ` [${chalk.yellow(type)}] ${content.slice(0, 80)} ${chalk.dim(`(${agent})`)}`);
+      },
+      onError: (msg) => {
+        console.error(chalk.red(`✗ ${msg}`));
+        process.exit(1);
+      },
+    });
+    if (result.dirs) {
+      for (const d of result.dirs) console.log(chalk.dim(`  Watching: ${d}`));
+    }
+    console.log(chalk.dim('\n  Press Ctrl+C to stop.\n'));
+    process.on('SIGINT', () => { result.stop(); console.log(chalk.dim('\nStopped.')); process.exit(0); });
+  });
+
+program
+  .command('hub')
+  .description('Start the cross-terminal knowledge sharing hub (run once, keeps running in background)')
+  .action(() => {
+    console.log(chalk.cyan('🔗 kodo hub running — cross-terminal sharing active'));
+    console.log(chalk.dim('  Socket: ~/.kodo/hub.sock'));
+    console.log(chalk.dim('  Press Ctrl+C to stop.\n'));
+    const { stop } = startHub();
+    process.on('SIGINT', () => { stop(); console.log(chalk.dim('\nHub stopped.')); process.exit(0); });
+    process.on('SIGTERM', () => { stop(); process.exit(0); });
   });
 
 program.parse();
