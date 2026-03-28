@@ -1,0 +1,39 @@
+{
+  "name": "kodo-memory",
+  "version": "0.1.0",
+  "description": "Universal persistent memory for AI coding agents. Remember conventions, learn from mistakes, carry context across sessions.",
+  "type": "module",
+  "bin": {
+    "kodo": "./bin/kodo.js"
+  },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./mcp": "./src/mcp-server.js"
+  },
+  "scripts": {
+    "start": "node src/mcp-server.js",
+    "dev": "node --watch src/mcp-server.js"
+  },
+  "keywords": [
+    "ai",
+    "coding-agent",
+    "memory",
+    "mcp",
+    "claude-code",
+    "cursor",
+    "kiro",
+    "codex",
+    "persistent-memory",
+    "context"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "chalk": "^5.0.0",
+    "commander": "^13.0.0",
+    "cosmiconfig": "^9.0.0",
+    "ora": "^8.0.0"
+  }
+}
